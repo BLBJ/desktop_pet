@@ -16,7 +16,7 @@ behavior:
   jump_probability: 0.15
   walk_probability: 0.35
 animations:
-  base_path: assets/yang
+  base_path: assets/my_pet
   actions:
     idle:
       folder: idle

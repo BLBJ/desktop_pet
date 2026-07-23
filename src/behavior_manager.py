@@ -230,11 +230,10 @@ class BehaviorManager(QObject):
         return mapping.get(action, PetState.IDLE)
 
     def _available_states(self) -> List[PetState]:
-        """返回当前有素材可用的 PetState 列表（不含 INTERACTING）。"""
+        """返回当前有素材可用的 PetState 列表（不含 INTERACTING）。IDLE 始终可用。"""
         available_actions = set(self._anim.all_action_names())
-        states = []
-        for state in (PetState.IDLE, PetState.SLEEPING,
-                       PetState.JUMPING, PetState.DAZING):
+        states = [PetState.IDLE]  # IDLE 始终可选，_resolve_action 会兜底
+        for state in (PetState.SLEEPING, PetState.JUMPING, PetState.DAZING):
             if state.value in available_actions:
                 states.append(state)
         return states
@@ -317,9 +316,10 @@ class BehaviorManager(QObject):
         self._emit_current_frame()
 
     def _on_return_from_timed_action(self) -> None:
-        """限时动作结束 → 回到 idle。"""
+        """限时动作结束 → 回到 idle，并立即安排下一次动作。"""
         if self._state in (PetState.SLEEPING, PetState.JUMPING, PetState.DAZING):
             self._transition_to(PetState.IDLE)
+            self._schedule_next_action()
 
     # ============================================================
     #  移动逻辑
@@ -423,6 +423,7 @@ class BehaviorManager(QObject):
             self._current_frame = 0
             self.action_changed.emit(action)
             self._action_timer.stop()
+            self._return_timer.stop()  # 停止睡眠/跳跃定时器
 
         self._emit_current_frame()
 
@@ -434,11 +435,19 @@ class BehaviorManager(QObject):
     def _on_interaction_done(self) -> None:
         """互动动画结束 → 恢复到之前的状态。"""
         if self._state != PetState.INTERACTING:
-            return  # 已经不在互动状态，不重复恢复
+            return
         self._state = self._prev_state
         self._current_frame = 0
         self.action_changed.emit(self._state.value)
         self._emit_current_frame()
+
+        # 如果恢复到了限时状态（睡眠），重新启动定时器
+        if self._state == PetState.SLEEPING:
+            sleep_cfg = self._anim.get_action_config('sleep')
+            duration = sleep_cfg.get('duration', 5)
+            if duration > 0:
+                self._return_timer.start(int(duration * 1000))
+
         self._schedule_next_action()
 
     # ============================================================
