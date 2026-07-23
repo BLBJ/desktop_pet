@@ -107,11 +107,10 @@ class BehaviorManager(QObject):
         # 初始状态：优先 idle，否则用第一个可用动作
         if 'idle' in available:
             self._state = PetState.IDLE
-            self._current_action = 'idle'
         else:
-            first = available[0]
-            self._state = self._action_to_state(first)
-            self._current_action = first
+            # 用第一个可用动作当 idle
+            self._state = PetState.IDLE
+        self._current_action = self._resolve_action(self._state.value)
 
         fps = self._anim.get_fps()
         frame_interval = int(1000 / fps)
@@ -149,12 +148,24 @@ class BehaviorManager(QObject):
     #  帧推进
     # ============================================================
 
+    def _resolve_action(self, preferred: str) -> str:
+        """
+        解析动作名。优先使用 preferred，如果素材不存在则用第一个可用动作。
+        确保无论如何都有一个能用的动画。
+        """
+        if self._anim.has_action(preferred):
+            return preferred
+        available = self._anim.all_action_names()
+        if available:
+            return available[0]
+        return preferred  # 没有任何素材，保持原名（后续 frame_count=0 静默跳过）
+
     def _on_frame_tick(self) -> None:
         """每帧推进动画帧索引。"""
         if self._state == PetState.INTERACTING:
             action = self._interaction_action
         else:
-            action = self._state.value
+            action = self._resolve_action(self._state.value)
 
         total = self._anim.frame_count(action)
         if total == 0:
@@ -174,7 +185,7 @@ class BehaviorManager(QObject):
         if self._state == PetState.INTERACTING:
             action = self._interaction_action
         else:
-            action = self._state.value
+            action = self._resolve_action(self._state.value)
 
         pixmap = self._anim.get_frame(action, self._current_frame)
         if pixmap:

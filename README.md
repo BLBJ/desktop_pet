@@ -104,7 +104,7 @@ behavior:
   action_interval_min: 5   # 动作切换最短间隔 (秒)
   action_interval_max: 15  # 动作切换最长间隔 (秒)
   walk_probability: 0.35   # 走路概率
-  sleep_probability: 0.1   # 睡觉概率
+  sleep_probability: 0.4   # 睡觉概率
   daze_probability: 0.2    # 发呆概率
   jump_probability: 0.15   # 跳跃概率
 
