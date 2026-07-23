@@ -11,12 +11,12 @@ behavior:
   walk_speed: 20
   action_interval_min: 5
   action_interval_max: 15
-  sleep_probability: 0.4
+  sleep_probability: 0.2
   daze_probability: 0.2
   jump_probability: 0.15
   walk_probability: 0.35
 animations:
-  base_path: assets/my_pet
+  base_path: assets/yang
   actions:
     idle:
       folder: idle
