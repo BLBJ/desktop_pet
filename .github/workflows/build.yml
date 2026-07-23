@@ -35,12 +35,14 @@ jobs:
             --clean --noconfirm \
             main.py
 
-      - name: 隐藏 Dock 图标
+      - name: 隐藏 Dock 图标 + 防止"已损坏"提示
         run: |
           /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" \
             dist/DesktopPet.app/Contents/Info.plist 2>/dev/null || \
           /usr/libexec/PlistBuddy -c "Set :LSUIElement true" \
             dist/DesktopPet.app/Contents/Info.plist
+          # ad-hoc 签名，避免 macOS 报"已损坏"
+          codesign --force --deep --sign - dist/DesktopPet.app
 
       - name: 上传 .app (artifact)
         uses: actions/upload-artifact@v4
