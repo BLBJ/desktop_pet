@@ -30,7 +30,7 @@ animations:
       folder: sleep
       frame_count: 8
       loop: true
-      duration: 20
+      duration: 10
     jump:
       folder: jump
       frame_count: 12
