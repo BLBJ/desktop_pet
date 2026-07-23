@@ -1,0 +1,94 @@
+name: Build Desktop Pet
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  # ---- macOS 打包 ----
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 打包为 .app
+        run: |
+          pyinstaller --onefile --windowed \
+            --name "DesktopPet" \
+            --add-data "assets:assets" \
+            --add-data "config.yaml:." \
+            --hidden-import PyQt6.QtCore \
+            --hidden-import PyQt6.QtGui \
+            --hidden-import PyQt6.QtWidgets \
+            --hidden-import yaml \
+            --osx-bundle-identifier "com.desktoppet.app" \
+            --clean --noconfirm \
+            main.py
+
+      - name: 隐藏 Dock 图标
+        run: |
+          /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" \
+            dist/DesktopPet.app/Contents/Info.plist 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Set :LSUIElement true" \
+            dist/DesktopPet.app/Contents/Info.plist
+
+      - name: 上传 .app (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DesktopPet-macOS
+          path: dist/DesktopPet.app
+
+      - name: 上传 .app (release zip)
+        run: |
+          cd dist
+          zip -r DesktopPet-macOS.zip DesktopPet.app
+
+      - name: 上传 zip 到 Release
+        uses: actions/upload-artifact@v4
+        with:
+          name: DesktopPet-macOS-zip
+          path: dist/DesktopPet-macOS.zip
+
+  # ---- Windows 打包 ----
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 打包为 .exe
+        run: |
+          pyinstaller --onefile --windowed `
+            --name "DesktopPet" `
+            --add-data "assets;assets" `
+            --add-data "config.yaml;." `
+            --hidden-import PyQt6.QtCore `
+            --hidden-import PyQt6.QtGui `
+            --hidden-import PyQt6.QtWidgets `
+            --hidden-import yaml `
+            --clean --noconfirm `
+            main.py
+
+      - name: 上传 .exe (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DesktopPet-Windows
+          path: dist/DesktopPet.exe

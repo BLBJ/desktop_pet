@@ -1,0 +1,54 @@
+pet:
+  name: 小宠物
+  scale: 1.4
+  fps: 12
+window:
+  always_on_top: true
+  start_position:
+  - 300
+  - 300
+behavior:
+  walk_speed: 20
+  action_interval_min: 5
+  action_interval_max: 15
+  sleep_probability: 0.1
+  daze_probability: 0.2
+  jump_probability: 0.15
+  walk_probability: 0.35
+animations:
+  base_path: assets/my_cat
+  actions:
+    idle:
+      folder: idle
+      frame_count: 8
+      loop: true
+    walk:
+      folder: walk
+      frame_count: 12
+      loop: true
+    sleep:
+      folder: sleep
+      frame_count: 8
+      loop: true
+      duration: 5
+    jump:
+      folder: jump
+      frame_count: 12
+      loop: false
+    daze:
+      folder: daze
+      frame_count: 8
+      loop: true
+    happy:
+      folder: happy
+      frame_count: 8
+      loop: false
+    angry:
+      folder: angry
+      frame_count: 8
+      loop: false
+interaction:
+  click_actions:
+  - happy
+  - jump
+  click_cooldown: 2
