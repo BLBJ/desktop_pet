@@ -90,12 +90,12 @@ class PetWindow(QWidget):
     def _setup_window(self) -> None:
         """配置无边框、置顶、透明窗口属性。"""
         flags = (
-            Qt.WindowType.FramelessWindowHint
+            Qt.WindowType.Window            # 独立顶层窗口（macOS 必须）
+            | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
         if not is_macos():
-            # Windows: Tool 隐藏任务栏图标
-            flags |= Qt.WindowType.Tool
+            flags |= Qt.WindowType.Tool     # Windows: 隐藏任务栏图标
         # macOS: Dock 图标通过 Info.plist 的 LSUIElement 隐藏
 
         self.setWindowFlags(flags)
@@ -108,8 +108,39 @@ class PetWindow(QWidget):
         # 不抢占焦点
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        # 接受鼠标事件（用于拖动和点击）
-        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)
+    def showEvent(self, event) -> None:
+        """窗口显示后执行平台特定设置。"""
+        super().showEvent(event)
+        if is_macos():
+            self._apply_macos_fixes()
+
+    def _apply_macos_fixes(self) -> None:
+        """
+        macOS 原生窗口调整：
+        1. 设置浮动窗口层级（高于普通窗口）
+        2. 设置在所有 Space/桌面 可见（多桌面跟随）
+        """
+        try:
+            from ctypes import c_void_p
+            import objc
+            view = objc.objc_object(c_void_p=int(self.winId()))
+            ns_window = view.window()
+
+            # 浮动层级
+            NSFloatingWindowLevel = 3
+            ns_window.setLevel_(NSFloatingWindowLevel)
+
+            # 所有桌面可见 + 不参与 Cmd+Tab 切换
+            NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
+            NSWindowCollectionBehaviorIgnoresCycle = 1 << 5
+            NSWindowCollectionBehaviorTransient = 1 << 3
+            ns_window.setCollectionBehavior_(
+                NSWindowCollectionBehaviorCanJoinAllSpaces
+                | NSWindowCollectionBehaviorIgnoresCycle
+                | NSWindowCollectionBehaviorTransient
+            )
+        except Exception:
+            pass  # pyobjc 未安装时静默跳过
 
     # ============================================================
     #  信号连接
