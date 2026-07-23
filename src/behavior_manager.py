@@ -171,12 +171,12 @@ class BehaviorManager(QObject):
         if total == 0:
             return
 
-        self._current_frame = (self._current_frame + 1) % total
-
-        # 非循环动画：播放完最后一帧后停在最后一帧
+        # 非循环动画：停在最后一帧，不再前进；循环动画：取余继续
         action_cfg = self._anim.get_action_config(action)
-        if not action_cfg.get('loop', True) and self._current_frame == total - 1:
-            pass
+        if not action_cfg.get('loop', True) and self._current_frame >= total - 1:
+            return  # 已到最后一帧，停止更新
+
+        self._current_frame = (self._current_frame + 1) % total
 
         self._emit_current_frame()
 
@@ -411,23 +411,30 @@ class BehaviorManager(QObject):
             else:
                 return  # 没有任何可用互动动作，直接忽略点击
 
-        self._prev_state = self._state
-        self._state = PetState.INTERACTING
-        self._interaction_action = action
-        self._current_frame = 0
+        # 已经在互动中 → 只重置帧和动画，不覆盖 prev_state（防止卡死）
+        if self._state == PetState.INTERACTING:
+            self._interaction_action = action
+            self._current_frame = 0
+            self._interaction_cooldown_timer.stop()
+        else:
+            self._prev_state = self._state
+            self._state = PetState.INTERACTING
+            self._interaction_action = action
+            self._current_frame = 0
+            self.action_changed.emit(action)
+            self._action_timer.stop()
 
-        self.action_changed.emit(action)
         self._emit_current_frame()
 
         total_frames = self._anim.frame_count(action)
         fps = self._anim.get_fps()
         duration_ms = max(500, int((total_frames / fps) * 1000))
-
-        self._action_timer.stop()
         self._interaction_cooldown_timer.start(duration_ms)
 
     def _on_interaction_done(self) -> None:
         """互动动画结束 → 恢复到之前的状态。"""
+        if self._state != PetState.INTERACTING:
+            return  # 已经不在互动状态，不重复恢复
         self._state = self._prev_state
         self._current_frame = 0
         self.action_changed.emit(self._state.value)

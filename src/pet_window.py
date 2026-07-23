@@ -89,20 +89,14 @@ class PetWindow(QWidget):
 
     def _setup_window(self) -> None:
         """配置无边框、置顶、透明窗口属性。"""
-        # 窗口标志
         flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
         )
-        # macOS 需要额外处理
-        if is_macos():
-            # 在 macOS 上，Tool 窗口不接收输入，用 SubWindow 替代但也要防止出现标题栏
-            flags = (
-                Qt.WindowType.FramelessWindowHint
-                | Qt.WindowType.WindowStaysOnTopHint
-                | Qt.WindowType.SubWindow
-            )
+        if not is_macos():
+            # Windows: Tool 隐藏任务栏图标
+            flags |= Qt.WindowType.Tool
+        # macOS: Dock 图标通过 Info.plist 的 LSUIElement 隐藏
 
         self.setWindowFlags(flags)
 
