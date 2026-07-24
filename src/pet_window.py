@@ -68,8 +68,27 @@ class PetWindow(QWidget):
 
         # ---- 创建控件 ----
         self._pet_widget = PetWidget(scale=self._scale, parent=self)
+
+        # 问候语气泡
+        msg_cfg = config.config.get('messages', {})
+        self._msg_enabled = msg_cfg.get('enabled', False)
+        self._msg_items = msg_cfg.get('items', [])
+        self._msg_seconds = msg_cfg.get('show_seconds', 3)
+        font_size = msg_cfg.get('font_size', 12)
+        self._msg_label = QLabel(self)
+        self._msg_label.setStyleSheet(
+            f"background: rgba(255,255,255,0.85); color: #333; "
+            f"border: 1px solid #ddd; border-radius: 8px; padding: 4px 10px; "
+            f"font-size: {font_size}px;"
+        )
+        self._msg_label.hide()
+        self._msg_timer = QTimer(self)
+        self._msg_timer.setSingleShot(True)
+        self._msg_timer.timeout.connect(self._msg_label.hide)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._msg_label, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._pet_widget)
         self.setLayout(layout)
 
@@ -176,8 +195,21 @@ class PetWindow(QWidget):
         self.move(x, y)
 
     def _on_action_changed(self, action_name: str) -> None:
-        """动作切换回调（可用于日志或额外 UI 反馈）。"""
-        pass  # 可在此添加气泡提示等
+        """动作切换时，非 walk 动作随机显示问候气泡。"""
+        if not self._msg_enabled or not self._msg_items:
+            return
+        # walk 类不显示气泡
+        if action_name in ('walk', 'walk_left', 'walk_right', 'walk_forward'):
+            return
+        # 30% 概率显示
+        import random
+        if random.random() > 0.3:
+            return
+        msg = random.choice(self._msg_items)
+        self._msg_label.setText(msg)
+        self._msg_label.adjustSize()
+        self._msg_label.show()
+        self._msg_timer.start(int(self._msg_seconds * 1000))
 
     # ============================================================
     #  鼠标事件 — 拖动 & 点击交互
