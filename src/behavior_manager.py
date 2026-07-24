@@ -18,12 +18,18 @@ from .utils import get_available_rect_for_pet, clamp
 
 class PetState(enum.Enum):
     """宠物状态枚举。"""
-    IDLE = "idle"           # 待机
-    WALKING = "walk"        # 走路
-    SLEEPING = "sleep"      # 睡觉
-    JUMPING = "jump"        # 跳跃
-    DAZING = "daze"         # 发呆
-    INTERACTING = "interacting"  # 互动（点击触发）
+    IDLE = "idle"
+    WALKING = "walk"
+    SLEEPING = "sleep"
+    JUMPING = "jump"
+    DAZING = "daze"
+    LIEDOWN = "liedown"
+    SPINNING = "spin"
+    WALK_FORWARD = "walk_forward"
+    BELLY = "belly"
+    INVITE = "invite"             # 邀请玩耍
+    WANJU = "wanju"               # 玩小玩具
+    INTERACTING = "interacting"
 
 
 class BehaviorManager(QObject):
@@ -59,6 +65,19 @@ class BehaviorManager(QObject):
         self._prev_state: PetState = PetState.IDLE  # 用于互动后恢复
         self._current_action: str = "idle"
         self._current_frame: int = 0
+
+        # ---- 头部追踪 ----
+        htc = config.config.get('head_track', {})
+        self._head_track_enabled = htc.get('enabled', False)
+        self._head_track_action = htc.get('action', 'look')
+        self._head_track_radius = htc.get('track_radius', 300)
+        self._frame_angle_map: list[float] = []  # frame_index → angle(°)
+        if self._head_track_enabled and self._anim.has_action(self._head_track_action):
+            action_cfg = self._anim.get_action_config(self._head_track_action)
+            self._build_angle_map(action_cfg)
+        self._mouse_screen_x: int = 0
+        self._mouse_screen_y: int = 0
+        self._head_tracking_active: bool = False
 
         # ---- 位置 & 移动 ----
         self._x: int = config.get_start_position()[0]
@@ -150,18 +169,36 @@ class BehaviorManager(QObject):
 
     def _resolve_action(self, preferred: str) -> str:
         """
-        解析动作名。优先使用 preferred，如果素材不存在则用第一个可用动作。
-        确保无论如何都有一个能用的动画。
+        解析动作名。优先使用 preferred，素材不存在则用第一个可用动作。
+        WALKING 状态根据方向自动选 walk_left / walk_right。
         """
+        # 走路时根据方向选左/右素材
+        if preferred == 'walk':
+            import math
+            # cos(方向) > 0 → 向右，< 0 → 向左
+            action = 'walk_right' if math.cos(self._direction) > 0 else 'walk_left'
+            if self._anim.has_action(action):
+                return action
+            # 素材只有一个方向时降级
+            if self._anim.has_action('walk_right'):
+                return 'walk_right'
+            if self._anim.has_action('walk_left'):
+                return 'walk_left'
+
         if self._anim.has_action(preferred):
             return preferred
         available = self._anim.all_action_names()
         if available:
             return available[0]
-        return preferred  # 没有任何素材，保持原名（后续 frame_count=0 静默跳过）
+        return preferred
 
     def _on_frame_tick(self) -> None:
-        """每帧推进动画帧索引。"""
+        """每帧推进动画帧索引。头部追踪激活时跳过帧推进。"""
+        # 头部追踪中 → 帧由鼠标角度决定，跳过时间推进
+        if self._head_tracking_active and self._state == PetState.IDLE:
+            self._emit_current_frame()
+            return
+
         if self._state == PetState.INTERACTING:
             action = self._interaction_action
         else:
@@ -181,15 +218,87 @@ class BehaviorManager(QObject):
         self._emit_current_frame()
 
     def _emit_current_frame(self) -> None:
-        """获取当前帧 QPixmap 并发送信号。"""
+        """获取当前帧 QPixmap 并发送信号。空闲时若鼠标靠近，用头部追踪帧。"""
         if self._state == PetState.INTERACTING:
             action = self._interaction_action
+        elif self._head_tracking_active and self._state == PetState.IDLE:
+            # 头部追踪：按鼠标角度选帧
+            angle_idx = self._angle_to_frame_index()
+            pixmap = self._anim.get_frame(self._head_track_action, angle_idx)
+            if pixmap:
+                self.frame_changed.emit(pixmap)
+            return
         else:
             action = self._resolve_action(self._state.value)
 
         pixmap = self._anim.get_frame(action, self._current_frame)
         if pixmap:
             self.frame_changed.emit(pixmap)
+
+    def _build_angle_map(self, action_cfg: dict) -> None:
+        """
+        从关键帧配置构建帧→角度映射表（线性插值，顺时针方向）。
+        angle_keyframes: {frame_index: angle_degrees, ...}
+        """
+        keyframes = action_cfg.get('angle_keyframes', {})
+        total = self._anim.frame_count(self._head_track_action)
+        if not keyframes:
+            for i in range(total):
+                self._frame_angle_map.append(i * 360.0 / total)
+            return
+
+        keys = sorted(keyframes.items())  # [(frame, angle), ...]
+
+        # 展开角度确保单调递增（跨 0° 边界时加 360）
+        unwrapped = {}
+        prev_a = float(keys[0][1])
+        unwrapped[keys[0][0]] = prev_a
+        for f, a in keys[1:]:
+            f, a = int(f), float(a)
+            while a < prev_a:
+                a += 360.0
+            unwrapped[f] = a
+            prev_a = a
+
+        # 对每帧插值
+        self._frame_angle_map = [0.0] * total
+        kf = sorted(unwrapped.items())
+        for i in range(total):
+            if i <= kf[0][0]:
+                self._frame_angle_map[i] = kf[0][1] % 360
+            elif i >= kf[-1][0]:
+                self._frame_angle_map[i] = kf[-1][1] % 360
+            else:
+                for k in range(len(kf) - 1):
+                    f0, a0 = kf[k]
+                    f1, a1 = kf[k + 1]
+                    if f0 <= i <= f1:
+                        t = (i - f0) / (f1 - f0) if f1 != f0 else 0
+                        self._frame_angle_map[i] = (a0 + t * (a1 - a0)) % 360
+                        break
+
+    def _angle_to_frame_index(self) -> int:
+        """根据鼠标角度，找 angle_map 中最接近的帧。"""
+        if not self._frame_angle_map:
+            return 0
+        pet_cx = self._x + self._pet_size[0] // 2
+        pet_cy = self._y + self._pet_size[1] // 2
+        dx = self._mouse_screen_x - pet_cx
+        dy = self._mouse_screen_y - pet_cy
+        import math
+        angle = math.degrees(math.atan2(-dy, dx))  # 0°=右, 顺时针增大
+        if angle < 0:
+            angle += 360
+
+        # 找角度最接近的帧
+        best_frame = 0
+        best_dist = 999.0
+        for i, fa in enumerate(self._frame_angle_map):
+            dist = min(abs(angle - fa), 360 - abs(angle - fa))
+            if dist < best_dist:
+                best_dist = dist
+                best_frame = i
+        return best_frame
 
     # ============================================================
     #  动作切换
@@ -205,8 +314,10 @@ class BehaviorManager(QObject):
         """定时器触发 → 切换到新的随机动作。"""
         self._action_timer.stop()  # 单次触发后用 _schedule_next_action 重新设定
 
-        if self._state in (PetState.SLEEPING, PetState.INTERACTING):
-            # 正在执行无法中断的动作，跳过
+        if self._state in (PetState.SLEEPING, PetState.INTERACTING,
+                            PetState.LIEDOWN, PetState.SPINNING, PetState.BELLY,
+                            PetState.INVITE, PetState.WANJU):
+            # 正在执行限时动作，跳过随机切换
             self._schedule_next_action()
             return
 
@@ -223,18 +334,29 @@ class BehaviorManager(QObject):
     def _action_to_state(self, action: str) -> PetState:
         """动作名称字符串 → PetState，未知则返回 IDLE。"""
         mapping = {
-            'idle': PetState.IDLE, 'walk': PetState.WALKING,
+            'idle': PetState.IDLE, 'walk_left': PetState.WALKING,
+            'walk_right': PetState.WALKING,
             'sleep': PetState.SLEEPING, 'jump': PetState.JUMPING,
-            'daze': PetState.DAZING,
+            'daze': PetState.DAZING, 'liedown': PetState.LIEDOWN,
+            'spin': PetState.SPINNING, 'walk_forward': PetState.WALK_FORWARD,
+            'belly': PetState.BELLY, 'invite': PetState.INVITE,
+            'wanju': PetState.WANJU,
         }
         return mapping.get(action, PetState.IDLE)
 
     def _available_states(self) -> List[PetState]:
         """返回当前有素材可用的 PetState 列表（不含 INTERACTING）。IDLE 始终可用。"""
         available_actions = set(self._anim.all_action_names())
-        states = [PetState.IDLE]  # IDLE 始终可选，_resolve_action 会兜底
-        for state in (PetState.SLEEPING, PetState.JUMPING, PetState.DAZING):
-            if state.value in available_actions:
+        states = [PetState.IDLE]
+        for state in (PetState.WALKING, PetState.SLEEPING, PetState.JUMPING,
+                       PetState.DAZING, PetState.SPINNING,
+                       PetState.WALK_FORWARD, PetState.BELLY,
+                       PetState.INVITE, PetState.WANJU):
+            if state == PetState.WALKING:
+                # walk_left 或 walk_right 任一存在即可走路
+                if 'walk_left' in available_actions or 'walk_right' in available_actions:
+                    states.append(state)
+            elif state.value in available_actions:
                 states.append(state)
         return states
 
@@ -251,8 +373,14 @@ class BehaviorManager(QObject):
         raw = {
             PetState.WALKING: probs.get('walk', 0.35),
             PetState.SLEEPING: probs.get('sleep', 0.1),
-            PetState.JUMPING: probs.get('jump', 0.15),
-            PetState.DAZING: probs.get('daze', 0.2),
+            PetState.JUMPING: probs.get('jump', 0.1),
+            PetState.DAZING: probs.get('daze', 0.1),
+            PetState.LIEDOWN: probs.get('liedown', 0.1),
+            PetState.SPINNING: probs.get('spin', 0.1),
+            PetState.WALK_FORWARD: probs.get('walk_forward', 0.1),
+            PetState.BELLY: probs.get('belly', 0.1),
+            PetState.INVITE: probs.get('invite', 0.05),
+            PetState.WANJU: probs.get('wanju', 0.05),
         }
 
         # 只保留可用动作的权重
@@ -296,28 +424,40 @@ class BehaviorManager(QObject):
 
         # ---- 特殊状态处理 ----
         if new_state == PetState.WALKING:
-            # 随机选择方向
-            self._direction = random.uniform(0, 2 * math.pi)
+            # 纯水平方向：0=右, π=左
+            self._direction = 0.0 if random.random() > 0.5 else math.pi
 
         elif new_state == PetState.SLEEPING:
-            # 睡觉持续固定时间后自动醒来
             sleep_cfg = self._anim.get_action_config('sleep')
             duration = sleep_cfg.get('duration', 5)
             if duration > 0:
                 self._return_timer.start(int(duration * 1000))
 
-        elif new_state == PetState.JUMPING:
-            # 跳跃结束自动回到待机
-            jump_frames = self._anim.frame_count('jump')
-            fps = self._anim.get_fps()
-            duration_ms = int((jump_frames / fps) * 1000)
-            self._return_timer.start(duration_ms)
+        elif new_state in (PetState.JUMPING, PetState.SPINNING, PetState.BELLY,
+                            PetState.INVITE, PetState.WANJU):
+            cfg = self._anim.get_action_config(new_state.value)
+            duration = cfg.get('duration', 0)
+            if duration > 0:
+                self._return_timer.start(int(duration * 1000))
+            else:
+                frames = self._anim.frame_count(new_state.value)
+                fps = self._anim.get_fps()
+                self._return_timer.start(max(500, int((frames / fps) * 1000)))
+
+        elif new_state == PetState.LIEDOWN:
+            # 趴下持续 duration 秒后回 idle
+            cfg = self._anim.get_action_config('liedown')
+            duration = cfg.get('duration', 4)
+            if duration > 0:
+                self._return_timer.start(int(duration * 1000))
 
         self._emit_current_frame()
 
     def _on_return_from_timed_action(self) -> None:
         """限时动作结束 → 回到 idle，并立即安排下一次动作。"""
-        if self._state in (PetState.SLEEPING, PetState.JUMPING, PetState.DAZING):
+        if self._state in (PetState.SLEEPING, PetState.JUMPING, PetState.DAZING,
+                            PetState.LIEDOWN, PetState.SPINNING, PetState.BELLY,
+                            PetState.INVITE, PetState.WANJU):
             self._transition_to(PetState.IDLE)
             self._schedule_next_action()
 
@@ -326,14 +466,12 @@ class BehaviorManager(QObject):
     # ============================================================
 
     def _on_move_tick(self) -> None:
-        """每帧更新宠物位置（仅在 WALKING 状态下移动）。"""
+        """水平行走：严格左右移动，不改变高度，碰到边界自动调头。"""
         if self._state != PetState.WALKING:
             return
 
-        # 更新宠物尺寸（用于边界检测），用任意可用帧
         any_frame = self._anim.get_frame('idle', 0)
         if any_frame is None:
-            # idle 不存在则取第一个可用动作的第一帧
             available = self._anim.all_action_names()
             if available:
                 any_frame = self._anim.get_frame(available[0], 0)
@@ -345,48 +483,29 @@ class BehaviorManager(QObject):
             )
 
         pw, ph = self._pet_size
+        speed = max(1, self._walk_speed)  # 速度（像素/帧）
 
-        # 计算移动距离
-        speed = self._walk_speed
-        dx = speed * math.cos(self._direction)
-        dy = speed * math.sin(self._direction)
-
+        # 纯水平移动：dx = 速度 × 方向（左=-1, 右=+1）
+        dx = speed if math.cos(self._direction) > 0 else -speed
         new_x = int(self._x + dx)
-        new_y = int(self._y + dy)
+        new_y = self._y  # 高度不变
 
-        # 边界检测与反弹
         bounds = get_available_rect_for_pet(new_x, new_y, pw, ph)
-        min_x, min_y, max_x, max_y = bounds
+        min_x, _, max_x, _ = bounds
 
-        bounced = False
-
+        # 碰到左右边界 → 调头 + 立即切换动画
         if new_x <= min_x:
             new_x = min_x
-            self._direction = math.pi - self._direction  # 水平反弹
-            bounced = True
+            self._direction = 0.0
+            self._current_frame = 0
+            self._emit_current_frame()
         elif new_x >= max_x:
             new_x = max_x
-            self._direction = math.pi - self._direction
-            bounced = True
-
-        if new_y <= min_y:
-            new_y = min_y
-            self._direction = -self._direction  # 垂直反弹
-            bounced = True
-        elif new_y >= max_y:
-            new_y = max_y
-            self._direction = -self._direction
-            bounced = True
-
-        # 随机小幅方向漂移（让行走更自然）
-        if not bounced and random.random() < 0.02:
-            self._direction += random.uniform(-0.3, 0.3)
-
-        # 确保方向在 [0, 2π)
-        self._direction %= (2 * math.pi)
+            self._direction = math.pi
+            self._current_frame = 0
+            self._emit_current_frame()
 
         self._x = new_x
-        self._y = new_y
         self.position_changed.emit(new_x, new_y)
 
     # ============================================================
@@ -441,12 +560,26 @@ class BehaviorManager(QObject):
         self.action_changed.emit(self._state.value)
         self._emit_current_frame()
 
-        # 如果恢复到了限时状态（睡眠），重新启动定时器
+        # 如果恢复到了限时状态，重新启动定时器
         if self._state == PetState.SLEEPING:
             sleep_cfg = self._anim.get_action_config('sleep')
             duration = sleep_cfg.get('duration', 5)
             if duration > 0:
                 self._return_timer.start(int(duration * 1000))
+        elif self._state == PetState.LIEDOWN:
+            cfg = self._anim.get_action_config('liedown')
+            duration = cfg.get('duration', 4)
+            if duration > 0:
+                self._return_timer.start(int(duration * 1000))
+        elif self._state in (PetState.JUMPING, PetState.SPINNING, PetState.BELLY,
+                              PetState.INVITE, PetState.WANJU):
+            cfg = self._anim.get_action_config(self._state.value)
+            duration = cfg.get('duration', 0)
+            if duration > 0:
+                self._return_timer.start(int(duration * 1000))
+            else:
+                frames = self._anim.frame_count(self._state.value)
+                self._return_timer.start(max(500, int((frames / self._anim.get_fps()) * 1000)))
 
         self._schedule_next_action()
 
@@ -458,6 +591,47 @@ class BehaviorManager(QObject):
         """手动设置宠物位置。"""
         self._x = x
         self._y = y
+
+    def set_mouse_position(self, screen_x: int, screen_y: int) -> None:
+        """更新鼠标屏幕坐标，用于头部追踪。"""
+        if not self._head_track_enabled:
+            return
+        self._mouse_screen_x = screen_x
+        self._mouse_screen_y = screen_y
+        # 判断鼠标是否在宠物附近
+        pet_cx = self._x + self._pet_size[0] // 2
+        pet_cy = self._y + self._pet_size[1] // 2
+        import math
+        dist = math.sqrt((screen_x - pet_cx)**2 + (screen_y - pet_cy)**2)
+        was_active = self._head_tracking_active
+        self._head_tracking_active = dist < self._head_track_radius
+        # 进入或退出追踪时立即刷新帧
+        if self._head_tracking_active != was_active:
+            self._emit_current_frame()
+
+    def play_action(self, action: str) -> None:
+        """右键菜单触发：直接播放指定动作一次，播完回 idle。"""
+        if not self._anim.has_action(action):
+            return
+
+        state = self._action_to_state(action)
+        if state == PetState.IDLE and action not in ('idle',):
+            # 非核心动作（如 happy/angry）→ 走互动通道
+            self.trigger_interaction(action)
+            return
+
+        # 核心动作 → 直接切换
+        self._action_timer.stop()
+        self._return_timer.stop()
+        self._interaction_cooldown_timer.stop()
+        self._prev_state = self._state
+        self._transition_to(state)
+
+        # 循环动作设置 3 秒后回 idle，非循环动作按帧数
+        action_cfg = self._anim.get_action_config(action)
+        if action_cfg.get('loop', True):
+            self._return_timer.start(3000)
+        # 非循环动作的 return_timer 已在 _transition_to 中设置
 
     def set_walk_speed(self, speed: int) -> None:
         """运行时修改行走速度。"""

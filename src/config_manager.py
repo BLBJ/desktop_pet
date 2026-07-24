@@ -153,8 +153,13 @@ class ConfigManager:
         return {
             'walk': float(self.get('behavior.walk_probability', 0.35)),
             'sleep': float(self.get('behavior.sleep_probability', 0.1)),
-            'daze': float(self.get('behavior.daze_probability', 0.2)),
-            'jump': float(self.get('behavior.jump_probability', 0.15)),
+            'daze': float(self.get('behavior.daze_probability', 0.1)),
+            'jump': float(self.get('behavior.jump_probability', 0.1)),
+            'spin': float(self.get('behavior.spin_probability', 0.1)),
+            'walk_forward': float(self.get('behavior.walk_forward_probability', 0.1)),
+            'belly': float(self.get('behavior.belly_probability', 0.1)),
+            'invite': float(self.get('behavior.invite_probability', 0.05)),
+            'wanju': float(self.get('behavior.wanju_probability', 0.05)),
         }
 
     def get_animation_config(self) -> Dict[str, Any]:

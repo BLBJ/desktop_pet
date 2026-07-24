@@ -83,6 +83,14 @@ class PetWindow(QWidget):
         # ---- 启动行为 ----
         self._behavior_manager.start()
 
+        # ---- 头部追踪：定时轮询鼠标位置 ----
+        if config.config.get('head_track', {}).get('enabled', False):
+            self._mouse_timer = QTimer(self)
+            self._mouse_timer.timeout.connect(self._poll_mouse)
+            self._mouse_timer.start(50)  # 20Hz 足够流畅
+        else:
+            self._mouse_timer = None
+
     # ============================================================
     #  窗口设置
     # ============================================================
@@ -231,6 +239,11 @@ class PetWindow(QWidget):
                 self._clear_click_cooldown
             )
 
+    def _poll_mouse(self) -> None:
+        """定时轮询全局鼠标坐标 → 传给行为管理器做头部追踪。"""
+        pos = QCursor.pos()
+        self._behavior_manager.set_mouse_position(pos.x(), pos.y())
+
     def _clear_click_cooldown(self) -> None:
         """清除点击冷却标志。"""
         self._click_cooldown_active = False
@@ -258,6 +271,18 @@ class PetWindow(QWidget):
             }
         """)
 
+        # ---- 动作列表 ----
+        actions_menu = menu.addMenu("动作列表")
+        for action_name in self._animation_manager.all_action_names():
+            action_cfg = self._animation_manager.get_action_config(action_name)
+            display_name = action_cfg.get('name_zh', action_name)
+            action_item = actions_menu.addAction(display_name)
+            action_item.triggered.connect(
+                lambda checked, a=action_name: self._behavior_manager.play_action(a)
+            )
+
+        menu.addSeparator()
+
         # ---- 隐藏/显示 ----
         hide_action = menu.addAction("隐藏宠物")
         hide_action.triggered.connect(self.hide_pet)
@@ -266,14 +291,6 @@ class PetWindow(QWidget):
         scale_menu = menu.addMenu("调整大小")
         scale_slider_action = self._create_scale_slider()
         scale_menu.addAction(scale_slider_action)
-
-        # ---- 调整速度 ----
-        # speed_menu = menu.addMenu("移动速度")
-        # speed_slider_action = self._create_speed_slider()
-        # speed_menu.addAction(speed_slider_action)
-
-        # ---- 开机自启 ----
-        # auto_start_action = menu.addAction("开机自启")
 
         menu.addSeparator()
 

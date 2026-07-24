@@ -36,31 +36,28 @@ jobs:
             --clean --noconfirm \
             main.py
 
-      - name: 隐藏 Dock 图标 + 防止"已损坏"提示
+      - name: 隐藏 Dock 图标 + 签名
         run: |
           /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" \
             dist/DesktopPet.app/Contents/Info.plist 2>/dev/null || \
           /usr/libexec/PlistBuddy -c "Set :LSUIElement true" \
             dist/DesktopPet.app/Contents/Info.plist
-          # ad-hoc 签名，避免 macOS 报"已损坏"
-          codesign --force --deep --sign - dist/DesktopPet.app
+          # ad-hoc 签名
+          codesign --force --deep --sign - --timestamp=none dist/DesktopPet.app
 
-      - name: 上传 .app (artifact)
+      - name: 打包为 DMG
+        run: |
+          mkdir -p dmg
+          cp -R dist/DesktopPet.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "DesktopPet" -srcfolder dmg -ov -format UDZO \
+            DesktopPet-macOS.dmg
+
+      - name: 上传 DMG (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: DesktopPet-macOS
-          path: dist/DesktopPet.app
-
-      - name: 上传 .app (release zip)
-        run: |
-          cd dist
-          zip -r DesktopPet-macOS.zip DesktopPet.app
-
-      - name: 上传 zip 到 Release
-        uses: actions/upload-artifact@v4
-        with:
-          name: DesktopPet-macOS-zip
-          path: dist/DesktopPet-macOS.zip
+          path: DesktopPet-macOS.dmg
 
   # ---- Windows 打包 ----
   build-windows:

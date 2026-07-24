@@ -1,6 +1,6 @@
 pet:
   name: 小宠物
-  scale: 0.9
+  scale: 0.5
   fps: 12
 window:
   always_on_top: true
@@ -8,47 +8,115 @@ window:
   - 300
   - 300
 behavior:
-  walk_speed: 20
-  action_interval_min: 5
-  action_interval_max: 15
-  sleep_probability: 0.2
-  daze_probability: 0.2
-  jump_probability: 0.15
+  walk_speed: 3
+  action_interval_min: 4
+  action_interval_max: 8
+  sleep_probability: 0.1
+  daze_probability: 0.3
+  jump_probability: 0.1
   walk_probability: 0.35
+  spin_probability: 0.1
+  walk_forward_probability: 0.1
+  belly_probability: 0.1
+  invite_probability: 0.05
+  wanju_probability: 0.05
 animations:
   base_path: assets/my_pet
   actions:
     idle:
+      name_zh: 待机
       folder: idle
       frame_count: 8
       loop: true
-    walk:
-      folder: walk
-      frame_count: 12
+    walk_left:
+      name_zh: 向左走
+      folder: walk_left
+      frame_count: 23
       loop: true
+      duration: 5
+    walk_right:
+      name_zh: 向右走
+      folder: walk_right
+      frame_count: 10
+      loop: true
+      duration: 5
     sleep:
+      name_zh: 睡觉
       folder: sleep
       frame_count: 8
       loop: true
       duration: 10
     jump:
+      name_zh: 跳跃
       folder: jump
-      frame_count: 12
+      frame_count: 60
       loop: false
     daze:
+      name_zh: 发呆
       folder: daze
-      frame_count: 8
+      frame_count: 60
       loop: true
     happy:
+      name_zh: 开心
       folder: happy
-      frame_count: 8
+      frame_count: 120
       loop: false
+      duration: 10
     angry:
+      name_zh: 生气
       folder: angry
-      frame_count: 8
+      frame_count: 60
       loop: false
+    invite:
+      name_zh: 邀请玩耍
+      folder: invite
+      frame_count: 60
+      loop: false
+    wanju:
+      name_zh: 玩小玩具
+      folder: wanju
+      frame_count: 60
+      loop: false  
+    spin:
+      name_zh: 转圈
+      folder: spin
+      frame_count: 46
+      loop: true
+      duration: 6
+    walk_forward:
+      name_zh: 往前走
+      folder: walk_forward
+      frame_count: 16
+      loop: true
+      duration: 10
+    belly:
+      name_zh: 翻肚皮
+      folder: belly
+      frame_count: 60
+      loop: false
+    look:
+      name_zh: 头部追踪
+      folder: look
+      frame_count: 60
+      loop: false
+      angle_keyframes:
+        0: 270
+        15: 270
+        25: 0
+        32: 90
+        37: 180
+        44: 270
+        59: 270
 interaction:
   click_actions:
   - happy
   - jump
+  - spin
+  - belly
+  - invite
+  - wanju
   click_cooldown: 2
+head_track:
+  enabled: true
+  action: look
+  track_radius: 300
