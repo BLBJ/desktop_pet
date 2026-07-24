@@ -1,6 +1,6 @@
 pet:
   name: 小宠物
-  scale: 0.5
+  scale: 0.9
   fps: 12
 window:
   always_on_top: true
@@ -76,7 +76,7 @@ animations:
       name_zh: 玩小玩具
       folder: wanju
       frame_count: 60
-      loop: false  
+      loop: false
     spin:
       name_zh: 转圈
       folder: spin
@@ -116,6 +116,23 @@ interaction:
   - invite
   - wanju
   click_cooldown: 2
+
+messages:
+  enabled: true
+  show_seconds: 3
+  font_size: 12
+  items:
+    - "主人在干嘛呢"
+    - "主人记得喝水哦"
+    - "主人记得找我玩"
+    - "好无聊呀~"
+    - "主人辛苦了"
+    - "摸摸我嘛"
+    - "今天天气真好"
+    - "主人最好了"
+    - "喵~"
+    - "汪!"
+
 head_track:
   enabled: true
   action: look
